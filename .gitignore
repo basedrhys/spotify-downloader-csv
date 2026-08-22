@@ -1,6 +1,9 @@
 # Ignore IDE folders
 .idea
 
+# Agent tooling state
+.omacc/
+
 # Spotdl stuff
 *.skip
 *.mp3
@@ -17,6 +20,7 @@
 *.profile
 .spotdl-cache
 .syncedlyrics
+.spotdl-logs/
 
 # Docs
 docs/source/_build/
