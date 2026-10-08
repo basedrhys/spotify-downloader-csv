@@ -144,6 +144,45 @@ than 90 days old, and PO token handling changes frequently upstream. The
 `web_embedded` workaround holds only while YouTube leaves that client out of the
 experiment. The real fix is a PO token provider plugin.
 
+**Update 2026-10-08:** it returned. YouTube extended the experiment to `web_embedded`, and upgrading yt-dlp fixed it. See section 4.
+
+## 4. `web_embedded` pulled into the experiment (FIXED by upgrading yt-dlp)
+
+Investigated 2026-10-08 while refreshing five playlists with `scripts/download-playlists.zsh`. Environment: yt-dlp `2026.03.13` → `2026.08.19`, yt-dlp-ejs `0.7.0` → `0.8.0`, Deno `2.9.5`.
+
+**Symptom:** the section 3 error again, for every new track. The first two playlists downloaded 0 of 13 new tracks, each failing with `AudioProviderError: YT-DLP download error - <url>`.
+
+**Root cause:** YouTube extended the GVS PO Token experiment from section 3 to the `web_embedded` client that section 3 switched to. Running yt-dlp `2026.03.13` directly, a `-v --simulate` pass logged `Detected experiment to bind GVS PO Token to video ID for web_embedded client` and still selected format 251. The real download moments later failed:
+
+```
+WARNING: [youtube] <id>: Some web_embedded client https formats have been skipped as they are missing a URL. YouTube may have enabled the SABR-only streaming experiment for the current session. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+ERROR: [youtube] <id>: Requested format is not available. Use --list-formats for a list of available formats
+```
+
+That pair shows the failing set shifting between sessions, as in section 3. A later `-g` probe of five failing videos resolved four of them.
+
+**Fix:** upgrade yt-dlp to `2026.08.19` and yt-dlp-ejs to `0.8.0` in `uv.lock` (`pyproject.toml` already allowed both). Measured with `yt-dlp -f bestaudio -g`, which resolves the media URL without transferring it, on five videos that had failed:
+
+| yt-dlp | Client | URLs resolved |
+| --- | --- | --- |
+| `2026.03.13` | `web_embedded` | 4 of 5 |
+| `2026.08.19` | `web_embedded` | 5 of 5 |
+| `2026.08.19` | default | 5 of 5 |
+
+`web_embedded` works with the new yt-dlp, so it stays in the script and in `~/.spotdl/config.json`.
+
+**Result:** the first full run downloaded 34 of 38 new tracks. The other 4 failed with the same generic error and all succeeded on one retry, which fits the per-session experiment rather than a hard block. A re-run then reported +0 new and 0 error lines for all five playlists. All 38 new files have cover art, run over 60 s and are at least 120 kbps.
+
+The tests that stream a YouTube URL through FFmpeg (`test_ffmpeg.py::test_convert`, `test_metadata.py::test_embed_metadata`) hit live YouTube and are flaky. Across two runs per version, `test_convert` and `test_embed_metadata[flac]` failed both times on `2026.03.13` and passed both times on `2026.08.19`. No test passed on the old version and failed on the new one.
+
+**If this returns:** same order as section 3. Update yt-dlp, then probe with `-g` across clients. A PO token provider plugin is still the durable fix.
+
+### Running downloads inside a Claude Code session
+
+The Apple Claude Code (ACC) network proxy allows only listed domains. Search and metadata need `music.youtube.com` and `www.youtube.com` (allowlisted 2026-08-21). The audio comes from `*.googlevideo.com` and cover art from `i.ytimg.com`. Until `googlevideo.com` and `ytimg.com` were allowlisted on 2026-10-08, transfers failed with `Unable to connect to proxy ... Tunnel connection failed: 403 Forbidden`, a failure spotdl's generic wrapper (section 3) also hides. The 2026-08-21 session's proxy log shows the same `googlevideo.com` blocks. Lyrics hosts (`api.genius.com`, `www.musixmatch.com`, `www.azlyrics.com`) stay blocked. That only leaves lyrics out, and the existing files checked had none.
+
+Claude Code sessions on this machine have `UV_DEFAULT_INDEX` and `UV_INDEX_URL` set to the internal mirror. They are not set in `~/.zshrc`, `~/.zprofile`, `~/.zshenv` or `~/.config/uv/uv.toml`. This repo resolves from public PyPI, but in those sessions a plain `uv run` or `uv lock` re-locks all 117 package sources onto the mirror. Run with `UV_FROZEN=1` instead, e.g. `UV_FROZEN=1 ./scripts/download-playlists.zsh`. The proxy also blocks `files.pythonhosted.org`, so a lock update inside a session has to resolve through the mirror and then point the registry and file URLs back at `pypi.org` and `files.pythonhosted.org`. The mirror serves the same files at the same paths with the same hashes, so the diff for this upgrade was just 6 changed lines.
+
 ## Diagnostic techniques that worked
 
 **Get the real error.** spotdl hides it. Either add `--log-level DEBUG`, or cut
