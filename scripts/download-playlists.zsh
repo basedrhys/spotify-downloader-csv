@@ -38,6 +38,7 @@ PLAYLISTS=(
   "trenning_music	trenning music.csv"
   "jersey_club	Jersey Club.csv"
   "heavy_edm	Library_ Heavy EDM.csv"
+  "early_evening_house	Early Evening House.csv"
 )
 
 count_files() {
